@@ -1,67 +1,63 @@
-# openaiとslack_sdkのWebClientをインポートします
 import os
-import openai
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from openai import OpenAI, ChatCompletion, Configuration
 
-# OpenAI APIキーを設定します
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# 環境変数から情報を取得
+openai_api_key = os.getenv('OPENAI_API_KEY')
+openai_api_url = os.getenv('OPENAI_API_URL')
+openai_api_model = os.getenv('OPENAI_API_MODEL')
+slack_bot_token = os.getenv('SLACK_BOT_TOKEN')
+gpt_bot_user_id = os.getenv('GPT_BOT_USER_ID')
+chat_gpt_system_prompt = os.getenv('CHAT_GPT_SYSTEM_PROMPT')
+gpt_thread_max_count = int(os.getenv('GPT_THREAD_MAX_COUNT'))
 
-# Slackのトークンを取得し、クライアントを作成します
-slack_token = os.getenv("SLACK_BOT_TOKEN")
-client = WebClient(token=slack_token)
+# OpenAIクライアントの設定
+openai_client = OpenAI(api_key=openai_api_key, api_base=openai_api_url + openai_api_model)
 
-# 環境変数から各種設定値を取得します
-GPT_BOT_USER_ID = os.getenv("GPT_BOT_USER_ID")
-CHAT_GPT_SYSTEM_PROMPT = os.getenv("CHAT_GPT_SYSTEM_PROMPT")
-GPT_THREAD_MAX_COUNT = int(os.getenv("GPT_THREAD_MAX_COUNT"))
+# Slackクライアントの設定
+slack_client = WebClient(token=slack_bot_token)
 
-# Slackへメッセージを投稿する関数です
 def post_message(channel, text, thread_ts):
     try:
-        # WebClientを使用してメッセージを投稿します
-        response = client.chat_postMessage(
-            channel=channel,
-            text=text,
-            thread_ts=thread_ts
-        )
-        print(response)
+        slack_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
     except SlackApiError as e:
-        # エラーが発生した場合はそれを出力します
-        print(f"Error: {e}")
+        print(f"Error posting message: {e}")
 
-# OpenAIからレスポンスを取得する関数です
 def create_completion(messages):
     try:
-        # OpenAIのCompletion APIを使用してレスポンスを取得します
-        response = openai.Completion.create(
-            model="text-davinci-002",
-            prompt=messages,
+        response = openai_client.chat_completions.create(
+            model=openai_api_model,
+            messages=messages,
             max_tokens=800,
             temperature=0.7,
             frequency_penalty=0,
             presence_penalty=0,
-            top_p=0.95,
+            top_p=0.95
         )
-        # レスポンスから最初の選択肢のテキストを返します
-        return response.choices[0].text
+        return response.choices[0].message['content']
     except Exception as e:
-        # エラーが発生した場合はそれを出力します
-        print(f"Error: {e}")
+        print(f"Error creating completion: {e}")
         return str(e)
 
-# Slackのイベントを処理する関数です
-# 具体的なロジックは元のNode.jsコードを参考にしてください
-def process_event(event):
-    pass
+def handle_request(context, req):
+    if 'x-slack-retry-num' in req.headers:
+        print(f"Ignoring Retry request: {req.headers['x-slack-retry-num']}")
+        return {
+            "statusCode": 200,
+            "body": {"message": "No need to resend"}
+        }
+    
+    body = eval(req.body)
+    if 'challenge' in body:
+        print(f"Challenge: {body['challenge']}")
+        return {
+            "body": body['challenge'],
+        }
 
-# リクエストを処理する関数です
-# 具体的なロジックは元のNode.jsコードを参考にしてください
-def handle_request(req):
-    pass
+    # 以下の部分はAzure Functions特有の処理であり、Pythonでの適切な実装方法がないため省略しています。
+    # 具体的な実装は、使用しているWebフレームワークや環境によります。
 
-# スクリプトが直接実行された場合にリクエストを処理します
-# この例ではリクエストは空の辞書ですが、実際には適切なリクエストを使用します
-if __name__ == "__main__":
-    req = {}  
-    handle_request(req)
+# Azure Functionsのエントリーポイント
+def main(context, req):
+    return handle_request(context, req)
