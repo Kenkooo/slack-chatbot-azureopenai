@@ -60,16 +60,9 @@ async def main(context: func.Context, req: func.HttpRequest):
         )
 
     # Response slack challenge requests
-    body = json.loads(req.get_body().decode())
-    if "challenge" in body:
-        context.log("Challenge: " + body["challenge"])
-        return func.HttpResponse(
-            body=body["challenge"],
-            status_code=200,
-            mimetype="text/plain"
-        )
-
-    # ...
+    
+if req.method == "POST" and "challenge" in body:
+    return func.HttpResponse(json.dumps({"challenge": body["challenge"]}), status_code=200)
 
     # The rest of your function goes here.
 
