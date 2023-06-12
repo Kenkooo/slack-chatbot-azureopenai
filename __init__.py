@@ -1,63 +1,79 @@
-import os
+from openai import OpenAI, Configuration
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from openai import OpenAI, ChatCompletion, Configuration
+import os
+import azure.functions as func
+import json
 
-# 環境変数から情報を取得
-openai_api_key = os.getenv('OPENAI_API_KEY')
-openai_api_url = os.getenv('OPENAI_API_URL')
-openai_api_model = os.getenv('OPENAI_API_MODEL')
-slack_bot_token = os.getenv('SLACK_BOT_TOKEN')
-gpt_bot_user_id = os.getenv('GPT_BOT_USER_ID')
-chat_gpt_system_prompt = os.getenv('CHAT_GPT_SYSTEM_PROMPT')
-gpt_thread_max_count = int(os.getenv('GPT_THREAD_MAX_COUNT'))
+openaiClient = OpenAI(
+    Configuration(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_path=os.getenv("OPENAI_API_URL") + os.getenv("OPENAI_API_MODEL"),
+        base_options={
+            'headers': {'api-key': os.getenv("OPENAI_API_KEY")},
+            'params': {
+                'api-version': '2023-03-15-preview'
+            }
+        }
+    )
+)
 
-# OpenAIクライアントの設定
-openai_client = OpenAI(api_key=openai_api_key, api_base=openai_api_url + openai_api_model)
+slackClient = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+GPT_BOT_USER_ID = os.getenv("GPT_BOT_USER_ID")
+CHAT_GPT_SYSTEM_PROMPT = os.getenv("CHAT_GPT_SYSTEM_PROMPT")
+GPT_THREAD_MAX_COUNT = int(os.getenv("GPT_THREAD_MAX_COUNT"))
 
-# Slackクライアントの設定
-slack_client = WebClient(token=slack_bot_token)
-
-def post_message(channel, text, thread_ts):
+async def postMessage(channel, text, threadTs, context):
     try:
-        slack_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+        response = slackClient.chat_postMessage(
+            channel=channel,
+            text=text,
+            thread_ts=threadTs
+        )
+        context.log(text)
     except SlackApiError as e:
-        print(f"Error posting message: {e}")
+        context.log.error(f"Error posting message: {e.response['error']}")
 
-def create_completion(messages):
+async def createCompletion(messages, context):
     try:
-        response = openai_client.chat_completions.create(
-            model=openai_api_model,
+        response = openaiClient.create_chat_completion(
             messages=messages,
             max_tokens=800,
             temperature=0.7,
             frequency_penalty=0,
             presence_penalty=0,
-            top_p=0.95
+            top_p=0.95,
         )
-        return response.choices[0].message['content']
+        return response.choices[0].message.content
     except Exception as e:
-        print(f"Error creating completion: {e}")
+        context.log.error(e)
         return str(e)
 
-def handle_request(context, req):
-    if 'x-slack-retry-num' in req.headers:
-        print(f"Ignoring Retry request: {req.headers['x-slack-retry-num']}")
-        return {
-            "statusCode": 200,
-            "body": {"message": "No need to resend"}
-        }
-    
-    body = eval(req.body)
-    if 'challenge' in body:
-        print(f"Challenge: {body['challenge']}")
-        return {
-            "body": body['challenge'],
-        }
+async def main(context: func.Context, req: func.HttpRequest):
+    # Ignore retry requests
+    if "x-slack-retry-num" in req.headers:
+        context.log("Ignoring Retry request: " + req.headers["x-slack-retry-num"])
+        context.log(req.get_body().decode())
+        return func.HttpResponse(
+            body="No need to resend",
+            status_code=200,
+        )
 
-    # 以下の部分はAzure Functions特有の処理であり、Pythonでの適切な実装方法がないため省略しています。
-    # 具体的な実装は、使用しているWebフレームワークや環境によります。
+    # Response slack challenge requests
+    body = json.loads(req.get_body().decode())
+    if "challenge" in body:
+        context.log("Challenge: " + body["challenge"])
+        return func.HttpResponse(
+            body=body["challenge"],
+            status_code=200,
+            mimetype="text/plain"
+        )
 
-# Azure Functionsのエントリーポイント
-def main(context, req):
-    return handle_request(context, req)
+    # ...
+
+    # The rest of your function goes here.
+
+    return func.HttpResponse(
+        body="OK",
+        status_code=200
+    )
