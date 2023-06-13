@@ -1,72 +1,51 @@
-from openai import OpenAI, Configuration
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 import os
-import azure.functions as func
-import json
+import slack_sdk
+import openai
+from flask import Flask, request, Response
+from slack_sdk.web import WebClient
+from slack_sdk.signature import SignatureVerifier
 
-openaiClient = OpenAI(
-    Configuration(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_path=os.getenv("OPENAI_API_URL") + os.getenv("OPENAI_API_MODEL"),
-        base_options={
-            'headers': {'api-key': os.getenv("OPENAI_API_KEY")},
-            'params': {
-                'api-version': '2023-03-15-preview'
-            }
-        }
-    )
-)
+app = Flask(__name__)
 
-slackClient = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
-GPT_BOT_USER_ID = os.getenv("GPT_BOT_USER_ID")
-CHAT_GPT_SYSTEM_PROMPT = os.getenv("CHAT_GPT_SYSTEM_PROMPT")
-GPT_THREAD_MAX_COUNT = int(os.getenv("GPT_THREAD_MAX_COUNT"))
+slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")
+openai_api_key = os.environ.get("OPENAI_API_KEY")
+openai_api_url = os.environ.get("OPENAI_API_URL")
+openai_api_model = os.environ.get("OPENAI_API_MODEL")
+gpt_bot_user_id = os.environ.get("GPT_BOT_USER_ID")
+chat_gpt_system_prompt = os.environ.get("CHAT_GPT_SYSTEM_PROMPT")
+gpt_thread_max_count = int(os.environ.get("GPT_THREAD_MAX_COUNT"))
 
-async def postMessage(channel, text, threadTs, context):
+slack_client = WebClient(token=slack_bot_token)
+openai.configuration.api_key = openai_api_key
+
+def post_message(channel, text, thread_ts):
+    slack_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+    print(text)
+
+def create_completion(messages):
     try:
-        response = slackClient.chat_postMessage(
-            channel=channel,
-            text=text,
-            thread_ts=threadTs
+        response = openai.Completion.create(
+          engine=openai_api_model,
+          messages=messages,
+          max_tokens=800,
+          temperature=0.7,
+          frequency_penalty=0,
+          presence_penalty=0,
+          top_p=0.95,
         )
-        context.log(text)
-    except SlackApiError as e:
-        context.log.error(f"Error posting message: {e.response['error']}")
-
-async def createCompletion(messages, context):
-    try:
-        response = openaiClient.create_chat_completion(
-            messages=messages,
-            max_tokens=800,
-            temperature=0.7,
-            frequency_penalty=0,
-            presence_penalty=0,
-            top_p=0.95,
-        )
-        return response.choices[0].message.content
+        return response.choices[0].text.strip()
     except Exception as e:
-        context.log.error(e)
+        print(f"Error: {e}")
         return str(e)
 
-async def main(context: func.Context, req: func.HttpRequest):
-    # Ignore retry requests
-    if "x-slack-retry-num" in req.headers:
-        context.log("Ignoring Retry request: " + req.headers["x-slack-retry-num"])
-        context.log(req.get_body().decode())
-        return func.HttpResponse(
-            body="No need to resend",
-            status_code=200,
-        )
+@app.route('/slack/events', methods=['POST'])
+def slack_events():
+    request_body = request.get_data(as_text=True)
+    print(request_body)
+    if not SignatureVerifier(os.environ.get("SLACK_SIGNING_SECRET")).is_valid_body(request_body, request.headers):
+        return Response(status=401)
 
-    # Response slack challenge requests
-    
-if req.method == "POST" and "challenge" in body:
-    return func.HttpResponse(json.dumps({"challenge": body["challenge"]}), status_code=200)
-
-    # The rest of your function goes here.
-
-    return func.HttpResponse(
-        body="OK",
-        status_code=200
-    )
+    event = request.json['event']
+    thread_ts = event.get('thread_ts', event.get('ts'))
+    if event.get('type') == 'app_mention':
+       
