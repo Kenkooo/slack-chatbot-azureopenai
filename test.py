@@ -1,6 +1,6 @@
 import os
 import json
-from azure.functions import HttpTrigger, HttpResponse
+from azure.functions import HttpRequest, HttpResponse
 from slack_sdk import WebClient
 from slack_sdk.signature import SignatureVerifier
 
@@ -11,7 +11,7 @@ signing_secret = os.getenv("SLACK_SIGNING_SECRET")
 slack_client = WebClient(token=slack_bot_token)
 signature_verifier = SignatureVerifier(signing_secret)
 
-def main(req: HttpTrigger) -> HttpResponse:
+def main(req: HttpRequest) -> HttpResponse:
     # Slackからのリクエストが正しい署名を持っていることを検証
     if not signature_verifier.is_valid_request(req.get_body(), req.headers):
         return func.HttpResponse(status_code=401)
