@@ -1,6 +1,7 @@
 import os
 import json
 from azure.functions import HttpRequest, HttpResponse
+import azure.functions as func
 from slack_sdk import WebClient
 from slack_sdk.signature import SignatureVerifier
 
