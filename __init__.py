@@ -16,7 +16,7 @@ chat_gpt_system_prompt = os.environ.get("CHAT_GPT_SYSTEM_PROMPT")
 gpt_thread_max_count = int(os.environ.get("GPT_THREAD_MAX_COUNT"))
 
 slack_client = WebClient(token=slack_bot_token)
-openai.configuration.api_key = openai_api_key
+openai.api_key = openai_api_key
 
 def post_message(channel, text, thread_ts):
     slack_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
