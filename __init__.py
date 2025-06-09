@@ -16,7 +16,8 @@ chat_gpt_system_prompt = os.environ.get("CHAT_GPT_SYSTEM_PROMPT")
 gpt_thread_max_count = int(os.environ.get("GPT_THREAD_MAX_COUNT"))
 
 slack_client = WebClient(token=slack_bot_token)
-openai.configuration.api_key = openai_api_key
+openai.api_key = openai_api_key
+openai.api_base = openai_api_url
 
 def post_message(channel, text, thread_ts):
     slack_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
@@ -24,8 +25,8 @@ def post_message(channel, text, thread_ts):
 
 def create_completion(messages):
     try:
-        response = openai.Completion.create(
-          engine=openai_api_model,
+        response = openai.ChatCompletion.create(
+          model=openai_api_model,
           messages=messages,
           max_tokens=800,
           temperature=0.7,
@@ -33,7 +34,7 @@ def create_completion(messages):
           presence_penalty=0,
           top_p=0.95,
         )
-        return response.choices[0].text.strip()
+        return response.choices[0].message["content"].strip()
     except Exception as e:
         print(f"Error: {e}")
         return str(e)
@@ -48,4 +49,11 @@ def slack_events():
     event = request.json['event']
     thread_ts = event.get('thread_ts', event.get('ts'))
     if event.get('type') == 'app_mention':
-       
+        user_text = event.get('text', '')
+        messages = [
+            {"role": "system", "content": chat_gpt_system_prompt},
+            {"role": "user", "content": user_text},
+        ]
+        completion = create_completion(messages)
+        post_message(event['channel'], completion, thread_ts)
+    return Response(status=200)
